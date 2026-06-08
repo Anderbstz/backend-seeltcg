@@ -21,6 +21,8 @@ public class ChatbotController {
             return ResponseEntity.badRequest().body(Map.of("error", "Mensaje vacío"));
         try {
             return ResponseEntity.ok(new ChatResponse(chatbotService.chat(request.getMessage(), request.isUseFullDb(), user)));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", "Error interno procesando la solicitud"));
         }

@@ -10,7 +10,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import java.time.LocalDate;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -40,6 +42,14 @@ public class ChatbotService {
         Sé amable, conciso y respondé siempre en español.
         """;
 
+    private static final int DAILY_LIMIT = 15;
+    private final Map<Long, UserQuota> dailyQuotas = new ConcurrentHashMap<>();
+
+    private static final Set<String> EASTER_EGGS = Set.of(
+        "yash", "yashuri", "nicole", "nicol", "coni"
+    );
+    private static final String EASTER_RESPONSE = "Ya me contaron de ti yash ;)";
+
     private static final Set<String> CARD_KEYWORDS = Set.of(
         "carta", "cartas", "card", "cards", "pokemon", "pokémon", "tcg", "pikacards",
         "precio", "precios", "stock", "rareza", "rarezas", "tipo", "tipos", "set", "sets",
@@ -55,6 +65,18 @@ public class ChatbotService {
 
     public String chat(String userMessage, boolean useFullDb, User user) {
         String lower = userMessage.toLowerCase();
+
+        // Easter egg
+        if (EASTER_EGGS.stream().anyMatch(lower::contains)) {
+            return EASTER_RESPONSE;
+        }
+
+        // Rate limit
+        UserQuota quota = dailyQuotas.computeIfAbsent(user.getId(), id -> new UserQuota());
+        if (!quota.canProceed()) {
+            throw new IllegalArgumentException("Límite diario alcanzado (15 preguntas). Volvé mañana.");
+        }
+        quota.increment();
 
         boolean mentionsCards = CARD_KEYWORDS.stream().anyMatch(lower::contains);
         String purchaseHistory = getPurchaseHistoryJson(user);
@@ -142,5 +164,27 @@ public class ChatbotService {
                 .map(i -> i.getProductName() + " x" + i.getQuantity())
                 .toList();
         return purchased.isEmpty() ? "Sin compras anteriores." : String.join("\n", purchased);
+    }
+
+    private static class UserQuota {
+        private LocalDate date = LocalDate.now();
+        private int count = 0;
+
+        boolean canProceed() {
+            resetIfNewDay();
+            return count < DAILY_LIMIT;
+        }
+
+        void increment() {
+            resetIfNewDay();
+            count++;
+        }
+
+        private void resetIfNewDay() {
+            if (!LocalDate.now().equals(date)) {
+                date = LocalDate.now();
+                count = 0;
+            }
+        }
     }
 }
