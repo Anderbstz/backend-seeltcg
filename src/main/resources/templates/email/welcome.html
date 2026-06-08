@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #e53e3e, #c53030); padding: 32px 24px; text-align: center; }
+        .header h1 { color: #fff; margin: 0; font-size: 24px; }
+        .body { padding: 32px 24px; }
+        .body p { color: #333; line-height: 1.6; font-size: 16px; }
+        .footer { background: #f8f8f8; padding: 16px 24px; text-align: center; color: #666; font-size: 13px; }
+        .btn { display: inline-block; background: #e53e3e; color: #fff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎉 ¡Bienvenido a SeaTgc!</h1>
+        </div>
+        <div class="body">
+            <p>¡Hola <strong th:text="${username}">entrenador</strong>!</p>
+            <p>Gracias por registrarte en <strong>SeaTgc</strong>, tu tienda de confianza para cartas Pokémon TCG originales.</p>
+            <p>Acá podés explorar cientos de cartas, armar tu colección y recibirlas en la puerta de tu casa con toda la proteccion que merecen.</p>
+            <p style="text-align: center; margin-top: 24px;">
+                <a th:href="${frontendUrl}" class="btn">Explorar cartas</a>
+            </p>
+            <p>¡Que tengas un excelente día y atrapa'los a todos!</p>
+            <p>— El equipo de SeaTgc</p>
+        </div>
+        <div class="footer">
+            <p>SeaTgc — Fan store independiente de cartas Pokémon TCG</p>
+            <p>Pokémon TCG data © Pokémon. SeaTgc no está afiliado a Pokémon.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -5,6 +5,7 @@ import com.pikacards.auth.model.User;
 import com.pikacards.auth.repository.UserRepository;
 import com.pikacards.auth.security.JwtTokenProvider;
 import com.pikacards.cart.repository.CartItemRepository;
+import com.pikacards.email.service.EmailService;
 import com.pikacards.order.repository.OrderRepository;
 import com.pikacards.user.model.Profile;
 import com.pikacards.user.repository.ProfileRepository;
@@ -33,13 +34,15 @@ public class AuthService {
     private final OrderRepository orderRepository;
     private final CartItemRepository cartItemRepository;
     private final String googleClientId;
+    private final EmailService emailService;
     private final RestTemplate restTemplate;
 
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                        AuthenticationManager authenticationManager, JwtTokenProvider tokenProvider,
                        ProfileRepository profileRepository, OrderRepository orderRepository,
                        CartItemRepository cartItemRepository,
-                       @Value("${pikacards.google.client-id}") String googleClientId) {
+                       @Value("${pikacards.google.client-id}") String googleClientId,
+                       EmailService emailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
@@ -48,6 +51,7 @@ public class AuthService {
         this.orderRepository = orderRepository;
         this.cartItemRepository = cartItemRepository;
         this.googleClientId = googleClientId;
+        this.emailService = emailService;
         this.restTemplate = new RestTemplate();
     }
 
@@ -66,6 +70,10 @@ public class AuthService {
         Profile profile = new Profile();
         profile.setUser(user);
         profileRepository.save(profile);
+
+        if (request.getEmail() != null) {
+            emailService.sendWelcomeEmail(request.getEmail(), request.getUsername());
+        }
     }
 
     public AuthResponse login(LoginRequest request) {

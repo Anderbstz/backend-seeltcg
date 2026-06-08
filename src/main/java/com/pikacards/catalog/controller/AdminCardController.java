@@ -1,10 +1,13 @@
 package com.pikacards.catalog.controller;
 
+import com.pikacards.catalog.dto.CardListResponse;
 import com.pikacards.catalog.dto.CardRequest;
 import com.pikacards.catalog.dto.CardResponse;
 import com.pikacards.catalog.model.Card;
 import com.pikacards.catalog.repository.CardRepository;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,6 +24,14 @@ public class AdminCardController {
 
     public AdminCardController(CardRepository cardRepository) {
         this.cardRepository = cardRepository;
+    }
+
+    @GetMapping
+    public CardListResponse listCards(@RequestParam(defaultValue = "1") int page,
+                                      @RequestParam(defaultValue = "20") int pageSize) {
+        Page<Card> pageResult = cardRepository.findAll(PageRequest.of(page - 1, pageSize));
+        return new CardListResponse(page, pageSize, pageResult.getTotalElements(),
+                pageResult.getContent().stream().map(CardResponse::fromEntity).toList());
     }
 
     @PostMapping

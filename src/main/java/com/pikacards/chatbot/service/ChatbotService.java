@@ -11,6 +11,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class ChatbotService {
@@ -23,51 +24,76 @@ public class ChatbotService {
     private final ObjectMapper objectMapper;
     private static final int MAX_CHARS = 20000;
 
+    private static final String SYSTEM_PROMPT = """
+        Eres SeaTgc, el asistente oficial de la tienda PikaCards, especializada en cartas Pokémon TCG.
+        
+        SOLO respondés preguntas relacionadas con:
+        - Cartas Pokémon TCG (nombres, tipos, rarezas, sets, artistas, precios, stock)
+        - La tienda PikaCards (pedidos, inventario, compras)
+        - Información general sobre Pokémon TCG (reglas, lore básico, colecciones)
+        
+        Si el usuario pregunta sobre temas FUERA de eso (matemáticas, código, historia, tareas,
+        texto de imágenes o archivos, poesía, otros juegos, etc.), respondé exactamente:
+        "Solo puedo ayudarte con temas relacionados a PikaCards y Pokémon TCG."
+        
+        No respondas preguntas sobre otras cosas aunque el usuario insista.
+        Sé amable, conciso y respondé siempre en español.
+        """;
+
+    private static final Set<String> CARD_KEYWORDS = Set.of(
+        "carta", "cartas", "card", "cards", "pokemon", "pokémon", "tcg", "pikacards",
+        "precio", "precios", "stock", "rareza", "rarezas", "tipo", "tipos", "set", "sets",
+        "artista", "artistas", "compra", "comprar", "compré", "pedido", "historial",
+        "name", "nombre", "hp", "rarity", "artist", "image", "imagen", "colección",
+        "coleccion", "expansion", "expansión", "booster", "sobre"
+    );
+
     public ChatbotService(CardRepository cardRepository, OrderRepository orderRepository) {
         this.cardRepository = cardRepository; this.orderRepository = orderRepository;
         this.restTemplate = new RestTemplate(); this.objectMapper = new ObjectMapper();
     }
 
     public String chat(String userMessage, boolean useFullDb, User user) {
-        var orders = orderRepository.findByUserOrderByCreatedAtDesc(user);
-        List<String> purchased = orders.stream().flatMap(o -> o.getItems().stream()).map(i -> i.getProductName()).toList();
-        List<Card> allCards = cardRepository.findAll();
-        String cardsJson;
+        String lower = userMessage.toLowerCase();
 
-        try {
-            if (!useFullDb) {
-                cardsJson = objectMapper.writeValueAsString(allCards.stream().map(c -> Map.of("id", c.getCardId(), "name", c.getName(), "types", c.getTypes())).toList());
-            } else {
-                cardsJson = objectMapper.writeValueAsString(allCards.stream().map(c -> {
-                    Map<String, Object> m = new LinkedHashMap<>();
-                    m.put("id", c.getCardId()); m.put("name", c.getName());
-                    m.put("types", c.getTypes() != null ? List.of(c.getTypes().split(",")) : List.of());
-                    m.put("rarity", c.getRarity()); m.put("image", c.getImage());
-                    m.put("artist", c.getArtist()); m.put("set_id", c.getSetId()); m.put("hp", c.getHp());
-                    return m;
-                }).toList());
-            }
-        } catch (JsonProcessingException e) { throw new RuntimeException("Error serializando cartas", e); }
+        boolean mentionsCards = CARD_KEYWORDS.stream().anyMatch(lower::contains);
+        String purchaseHistory = getPurchaseHistoryJson(user);
 
-        String truncatedNotice = "";
-        if (cardsJson.length() > MAX_CHARS) { cardsJson = cardsJson.substring(0, MAX_CHARS); truncatedNotice = "\n...(base de datos truncada)..."; }
-
-        String prompt = "Eres SeaTgc, asistente oficial de la tienda PikaCards.\nEres amable, conciso y experto en cartas Pokémon TCG.\n\nBASE DE DATOS DE CARTAS:\n%s%s\n\nHISTORIAL DE COMPRAS:\n%s\n\nMENSAJE: %s\n\nResponde en español."
-                .formatted(cardsJson, truncatedNotice, purchased, userMessage);
+        String userContent;
+        if (mentionsCards) {
+            String cardsJson = getCardsJson(useFullDb);
+            userContent = """
+                BASE DE DATOS DE CARTAS:
+                %s
+                
+                HISTORIAL DE COMPRAS DEL USUARIO:
+                %s
+                
+                PREGUNTA DEL USUARIO:
+                %s
+                
+                Respondé solo si está relacionado a PikaCards o Pokémon TCG.
+                """.formatted(cardsJson, purchaseHistory, userMessage);
+        } else {
+            userContent = userMessage;
+        }
 
         try {
             Map<String, Object> requestBody = new LinkedHashMap<>();
             requestBody.put("model", model);
             requestBody.put("messages", List.of(
-                    Map.of("role", "system", "content", "Eres SeaTgc, asistente de PikaCards."),
-                    Map.of("role", "user", "content", prompt)
+                    Map.of("role", "system", "content", SYSTEM_PROMPT),
+                    Map.of("role", "user", "content", userContent)
             ));
+
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setBearerAuth(apiKey);
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
 
-            ResponseEntity<Map> response = restTemplate.postForEntity("https://api.deepseek.com/chat/completions", entity, Map.class);
+            ResponseEntity<Map> response = restTemplate.postForEntity(
+                    "https://api.deepseek.com/chat/completions", entity, Map.class);
+
             if (response.getBody() != null) {
                 List<Map<String, Object>> choices = (List<Map<String, Object>>) response.getBody().get("choices");
                 if (choices != null && !choices.isEmpty()) {
@@ -80,5 +106,41 @@ public class ChatbotService {
             System.err.println("Error DeepSeek: " + e.getMessage());
             throw new RuntimeException("Error interno procesando la solicitud", e);
         }
+    }
+
+    private String getCardsJson(boolean useFullDb) {
+        List<Card> allCards = cardRepository.findAll();
+        try {
+            String json;
+            if (!useFullDb) {
+                json = objectMapper.writeValueAsString(allCards.stream().map(c -> Map.of(
+                        "id", c.getCardId(), "name", c.getName(), "types", c.getTypes()
+                )).toList());
+            } else {
+                json = objectMapper.writeValueAsString(allCards.stream().map(c -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id", c.getCardId()); m.put("name", c.getName());
+                    m.put("types", c.getTypes() != null ? List.of(c.getTypes().split(",")) : List.of());
+                    m.put("rarity", c.getRarity()); m.put("image", c.getImage());
+                    m.put("artist", c.getArtist()); m.put("set_id", c.getSetId()); m.put("hp", c.getHp());
+                    return m;
+                }).toList());
+            }
+            if (json.length() > MAX_CHARS) {
+                json = json.substring(0, MAX_CHARS) + "\n...(base de datos truncada)...";
+            }
+            return json;
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Error serializando cartas", e);
+        }
+    }
+
+    private String getPurchaseHistoryJson(User user) {
+        var orders = orderRepository.findByUserOrderByCreatedAtDesc(user);
+        List<String> purchased = orders.stream()
+                .flatMap(o -> o.getItems().stream())
+                .map(i -> i.getProductName() + " x" + i.getQuantity())
+                .toList();
+        return purchased.isEmpty() ? "Sin compras anteriores." : String.join("\n", purchased);
     }
 }

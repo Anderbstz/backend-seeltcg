@@ -4,6 +4,7 @@ import com.pikacards.auth.model.User;
 import com.pikacards.cart.repository.CartItemRepository;
 import com.pikacards.cart.service.CartService;
 import com.pikacards.catalog.service.CardService;
+import com.pikacards.email.service.EmailService;
 import com.pikacards.order.dto.OrderResponse;
 import com.pikacards.order.model.Order;
 import com.pikacards.order.model.OrderItem;
@@ -19,11 +20,12 @@ public class OrderService {
     private final CartItemRepository cartItemRepository;
     private final CartService cartService;
     private final CardService cardService;
+    private final EmailService emailService;
 
     public OrderService(OrderRepository orderRepository, CartItemRepository cartItemRepository,
-                        CartService cartService, CardService cardService) {
+                        CartService cartService, CardService cardService, EmailService emailService) {
         this.orderRepository = orderRepository; this.cartItemRepository = cartItemRepository;
-        this.cartService = cartService; this.cardService = cardService;
+        this.cartService = cartService; this.cardService = cardService; this.emailService = emailService;
     }
 
     @Transactional
@@ -51,6 +53,16 @@ public class OrderService {
         order.setTotal(total);
         orderRepository.save(order);
         cartService.clearCart(user);
+
+        // Enviar email de confirmación
+        String email = user.getEmail();
+        if (email != null && !email.isEmpty()) {
+            List<EmailService.OrderItemEmail> items = order.getItems().stream()
+                .map(i -> new EmailService.OrderItemEmail(i.getProductName(), i.getQuantity(), "S/ " + i.getPrice()))
+                .toList();
+            emailService.sendPurchaseConfirmation(email, user.getUsername(), order.getId(), total, items);
+        }
+
         return order;
     }
 
