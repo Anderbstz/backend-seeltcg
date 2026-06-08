@@ -4,12 +4,17 @@ import com.pikacards.auth.dto.*;
 import com.pikacards.auth.model.User;
 import com.pikacards.auth.repository.UserRepository;
 import com.pikacards.auth.security.JwtTokenProvider;
+import com.pikacards.cart.repository.CartItemRepository;
+import com.pikacards.order.repository.OrderRepository;
+import com.pikacards.user.model.Profile;
+import com.pikacards.user.repository.ProfileRepository;
 import org.springframework.http.*;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import java.util.Map;
 
@@ -19,17 +24,26 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider tokenProvider;
+    private final ProfileRepository profileRepository;
+    private final OrderRepository orderRepository;
+    private final CartItemRepository cartItemRepository;
     private final RestTemplate restTemplate;
 
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                       AuthenticationManager authenticationManager, JwtTokenProvider tokenProvider) {
+                       AuthenticationManager authenticationManager, JwtTokenProvider tokenProvider,
+                       ProfileRepository profileRepository, OrderRepository orderRepository,
+                       CartItemRepository cartItemRepository) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.tokenProvider = tokenProvider;
+        this.profileRepository = profileRepository;
+        this.orderRepository = orderRepository;
+        this.cartItemRepository = cartItemRepository;
         this.restTemplate = new RestTemplate();
     }
 
+    @Transactional
     public void register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername()))
             throw new IllegalArgumentException("El usuario ya existe");
@@ -40,6 +54,10 @@ public class AuthService {
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         userRepository.save(user);
+
+        Profile profile = new Profile();
+        profile.setUser(user);
+        profileRepository.save(profile);
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -76,19 +94,26 @@ public class AuthService {
             newUser.setUsername(email);
             newUser.setEmail(email);
             newUser.setPassword(passwordEncoder.encode("google-oauth-" + System.currentTimeMillis()));
-            newUser.setFirstName(givenName.isEmpty() ? name : givenName);
-            newUser.setLastName(familyName);
             newUser.setAvatarUrl(picture);
-            return userRepository.save(newUser);
+            User saved = userRepository.save(newUser);
+
+            Profile profile = new Profile();
+            profile.setUser(saved);
+            profile.setFirstName(givenName.isEmpty() ? name : givenName);
+            profile.setLastName(familyName);
+            profileRepository.save(profile);
+
+            return saved;
         });
         boolean updated = false;
-        if (!givenName.isEmpty() && !givenName.equals(user.getFirstName())) { user.setFirstName(givenName); updated = true; }
-        if (!familyName.isEmpty() && !familyName.equals(user.getLastName())) { user.setLastName(familyName); updated = true; }
         if (!picture.isEmpty() && !picture.equals(user.getAvatarUrl())) { user.setAvatarUrl(picture); updated = true; }
         if (updated) userRepository.save(user);
 
+        Profile profile = profileRepository.findByUserId(user.getId()).orElse(null);
+        String displayName = profile != null ? profile.getFirstName() : null;
+
         AuthResponse.UserDto userDto = new AuthResponse.UserDto(user.getId(), user.getUsername(), user.getEmail(),
-                user.getFirstName(), user.getLastName(), user.getAvatarUrl());
+                displayName, profile != null ? profile.getLastName() : null, user.getAvatarUrl(), user.getRole().name());
         String accessToken = tokenProvider.generateToken(user.getId(), user.getUsername());
         return new AuthResponse("Login con Google OK", userDto, accessToken, accessToken);
     }
@@ -101,22 +126,31 @@ public class AuthService {
         userRepository.save(user);
     }
 
+    @Transactional
     public void deleteAccount(Long userId, String confirm, String password) {
         if (!"DELETE".equals(confirm)) throw new IllegalArgumentException("Confirma escribiendo DELETE");
         User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado"));
         if (!passwordEncoder.matches(password, user.getPassword())) throw new IllegalArgumentException("Contraseña inválida");
+
+        profileRepository.findByUserId(userId).ifPresent(profileRepository::delete);
+        orderRepository.deleteByUser(user);
+        cartItemRepository.deleteByUser(user);
         userRepository.delete(user);
     }
 
     public AuthResponse.UserDto getProfile(Long userId) {
         User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado"));
+        Profile profile = profileRepository.findByUserId(userId).orElse(null);
+        String displayName = profile != null ? profile.getFirstName() : null;
         return new AuthResponse.UserDto(user.getId(), user.getUsername(), user.getEmail(),
-                user.getFirstName(), user.getLastName(), user.getAvatarUrl());
+                displayName, profile != null ? profile.getLastName() : null, user.getAvatarUrl(), user.getRole().name());
     }
 
     private AuthResponse buildAuthResponse(User user, String message) {
+        Profile profile = profileRepository.findByUserId(user.getId()).orElse(null);
+        String displayName = profile != null ? profile.getFirstName() : null;
         AuthResponse.UserDto userDto = new AuthResponse.UserDto(user.getId(), user.getUsername(), user.getEmail(),
-                user.getFirstName(), user.getLastName(), user.getAvatarUrl());
+                displayName, profile != null ? profile.getLastName() : null, user.getAvatarUrl(), user.getRole().name());
         String accessToken = tokenProvider.generateToken(user.getId(), user.getUsername());
         return new AuthResponse(message, userDto, accessToken, accessToken);
     }
