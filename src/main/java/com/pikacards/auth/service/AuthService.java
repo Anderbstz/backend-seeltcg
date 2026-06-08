@@ -8,6 +8,9 @@ import com.pikacards.cart.repository.CartItemRepository;
 import com.pikacards.order.repository.OrderRepository;
 import com.pikacards.user.model.Profile;
 import com.pikacards.user.repository.ProfileRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -20,6 +23,8 @@ import java.util.Map;
 
 @Service
 public class AuthService {
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
@@ -27,12 +32,14 @@ public class AuthService {
     private final ProfileRepository profileRepository;
     private final OrderRepository orderRepository;
     private final CartItemRepository cartItemRepository;
+    private final String googleClientId;
     private final RestTemplate restTemplate;
 
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                        AuthenticationManager authenticationManager, JwtTokenProvider tokenProvider,
                        ProfileRepository profileRepository, OrderRepository orderRepository,
-                       CartItemRepository cartItemRepository) {
+                       CartItemRepository cartItemRepository,
+                       @Value("${pikacards.google.client-id}") String googleClientId) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
@@ -40,6 +47,7 @@ public class AuthService {
         this.profileRepository = profileRepository;
         this.orderRepository = orderRepository;
         this.cartItemRepository = cartItemRepository;
+        this.googleClientId = googleClientId;
         this.restTemplate = new RestTemplate();
     }
 
@@ -77,11 +85,19 @@ public class AuthService {
         try {
             googleResponse = restTemplate.getForEntity(verifyUrl, Map.class);
         } catch (Exception e) {
-            throw new IllegalArgumentException("Token de Google inválido");
+            log.error("Google token verification failed: {}", e.getMessage(), e);
+            throw new IllegalArgumentException("Error al verificar el token de Google");
         }
         if (googleResponse.getStatusCode() != HttpStatus.OK || googleResponse.getBody() == null)
-            throw new IllegalArgumentException("Token de Google inválido");
+            throw new IllegalArgumentException("Token de Google inválido o expirado");
         Map<String, Object> data = googleResponse.getBody();
+
+        String tokenAud = (String) data.get("aud");
+        if (tokenAud == null || !tokenAud.equals(googleClientId)) {
+            log.warn("Google token aud mismatch: expected {}, got {}", googleClientId, tokenAud);
+            throw new IllegalArgumentException("Token de Google no corresponde a esta aplicación");
+        }
+
         String email = (String) data.get("email");
         String name = (String) data.getOrDefault("name", email != null ? email.split("@")[0] : "user");
         String givenName = (String) data.getOrDefault("given_name", "");
