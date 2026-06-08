@@ -35,5 +35,9 @@ build/
 ### Data (copied from Django, not source) ###
 /data/
 
+### Logs ###
+*.log
+*.err
+
 ### VS Code ###
 .vscode/
