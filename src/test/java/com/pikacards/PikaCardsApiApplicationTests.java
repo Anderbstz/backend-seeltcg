@@ -1,0 +1,13 @@
+package com.pikacards;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest
+class PikaCardsApiApplicationTests {
+
+	@Test
+	void contextLoads() {
+	}
+
+}
