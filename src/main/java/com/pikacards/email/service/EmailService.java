@@ -92,6 +92,29 @@ public class EmailService {
                 "subject", subject,
                 "html", html
             );
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(apiKey);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+            ResponseEntity<Map> response = restTemplate.exchange(RESEND_API, HttpMethod.POST, entity, Map.class);
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("📧 Email enviado a {}: {}", to, subject);
+            } else {
+                log.error("❌ Resend error: {}", response.getBody());
+            }
+        } catch (Exception e) {
+            log.error("❌ Error enviando email a {}: {}", to, e.getMessage());
+        }
+    }
+
+    public String sendTestEmail(String to) {
+        try {
+            Map<String, Object> body = Map.of(
+                "from", fromEmail,
+                "to", List.of(to),
+                "subject", "🔧 Prueba SeaTgc",
+                "html", "<h1>Prueba</h1><p>Si ves esto, el email funciona ✅</p>"
+            );
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -101,12 +124,16 @@ public class EmailService {
             ResponseEntity<Map> response = restTemplate.exchange(RESEND_API, HttpMethod.POST, entity, Map.class);
 
             if (response.getStatusCode().is2xxSuccessful()) {
-                log.info("📧 Email enviado a {}: {}", to, subject);
+                log.info("📧 Email de prueba enviado a {}", to);
+                return "Email enviado a " + to;
             } else {
-                log.error("❌ Resend error: {}", response.getBody());
+                String err = "Resend error: " + response.getBody();
+                log.error("❌ {}", err);
+                return err;
             }
         } catch (Exception e) {
-            log.error("❌ Error enviando email a {}: {}", to, e.getMessage());
+            log.error("❌ Error en test email: {}", e.getMessage(), e);
+            throw new RuntimeException("Error: " + e.getMessage());
         }
     }
 

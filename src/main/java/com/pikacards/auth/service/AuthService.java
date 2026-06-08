@@ -113,7 +113,9 @@ public class AuthService {
         String picture = (String) data.getOrDefault("picture", "");
         if (email == null) throw new IllegalArgumentException("Token no contiene email");
 
+        final boolean[] isNewUser = {false};
         User user = userRepository.findByEmail(email).orElseGet(() -> {
+            isNewUser[0] = true;
             User newUser = new User();
             newUser.setUsername(email);
             newUser.setEmail(email);
@@ -132,6 +134,11 @@ public class AuthService {
         boolean updated = false;
         if (!picture.isEmpty() && !picture.equals(user.getAvatarUrl())) { user.setAvatarUrl(picture); updated = true; }
         if (updated) userRepository.save(user);
+
+        if (isNewUser[0] && user.getEmail() != null) {
+            String displayName = givenName.isEmpty() ? name : givenName;
+            emailService.sendWelcomeEmail(user.getEmail(), displayName);
+        }
 
         Profile profile = profileRepository.findByUserId(user.getId()).orElse(null);
         String displayName = profile != null ? profile.getFirstName() : null;
