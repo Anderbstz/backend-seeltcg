@@ -36,41 +36,36 @@ public class CardDataLoader implements CommandLineRunner {
         // Try multiple locations
         JsonNode root = null;
 
-        // 1. Try from data/ directory next to the JAR/project root
-        File dataFile = new File("data/cards_500.json");
-        if (dataFile.exists()) {
-            root = objectMapper.readTree(dataFile);
-            System.out.println("   → Encontrado en: data/cards_500.json");
-        }
+        // Try filenames in order: big_cards_2000.json (preferred), then cards_500.json (legacy)
+        String[] filenames = {"big_cards_2000.json", "cards_500.json"};
+        String[] locations = {
+            "data/",                              // project root /data/
+            "../data/",                            // from backend/ subdir
+            "C:\\PikaCards\\Backend-Seeltcg\\data\\", // absolute
+        };
 
-        // 2. Try from classpath:/data/cards_500.json
-        if (root == null) {
-            try {
-                ClassPathResource resource = new ClassPathResource("data/cards_500.json");
-                if (resource.exists()) {
-                    try (InputStream is = resource.getInputStream()) {
-                        root = objectMapper.readTree(is);
-                        System.out.println("   → Encontrado en: classpath:data/cards_500.json");
-                    }
+        for (String fname : filenames) {
+            if (root != null) break;
+            // Try filesystem
+            for (String loc : locations) {
+                File f = new File(loc + fname);
+                if (f.exists()) {
+                    root = objectMapper.readTree(f);
+                    System.out.println("   → Encontrado: " + f.getAbsolutePath());
+                    break;
                 }
-            } catch (Exception ignored) {}
-        }
-
-        // 3. Try from ../data/cards_500.json (when running from backend/ subdir)
-        if (root == null) {
-            File parentDataFile = new File("../data/cards_500.json");
-            if (parentDataFile.exists()) {
-                root = objectMapper.readTree(parentDataFile);
-                System.out.println("   → Encontrado en: ../data/cards_500.json");
             }
-        }
-
-        // 4. Try absolute path
-        if (root == null) {
-            File absPath = new File("C:\\PikaCards\\Backend-Seeltcg\\data\\cards_500.json");
-            if (absPath.exists()) {
-                root = objectMapper.readTree(absPath);
-                System.out.println("   → Encontrado en ruta absoluta");
+            // Try classpath
+            if (root == null) {
+                try {
+                    ClassPathResource resource = new ClassPathResource("data/" + fname);
+                    if (resource.exists()) {
+                        try (InputStream is = resource.getInputStream()) {
+                            root = objectMapper.readTree(is);
+                            System.out.println("   → Encontrado en classpath: data/" + fname);
+                        }
+                    }
+                } catch (Exception ignored) {}
             }
         }
 
