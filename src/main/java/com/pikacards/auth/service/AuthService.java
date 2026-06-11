@@ -4,6 +4,8 @@ import com.pikacards.auth.dto.*;
 import com.pikacards.auth.model.User;
 import com.pikacards.auth.repository.UserRepository;
 import com.pikacards.auth.security.JwtTokenProvider;
+import com.pikacards.auth.token.PasswordResetToken;
+import com.pikacards.auth.token.PasswordResetTokenRepository;
 import com.pikacards.cart.repository.CartItemRepository;
 import com.pikacards.email.service.EmailService;
 import com.pikacards.order.repository.OrderRepository;
@@ -20,7 +22,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
+import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -33,16 +37,20 @@ public class AuthService {
     private final ProfileRepository profileRepository;
     private final OrderRepository orderRepository;
     private final CartItemRepository cartItemRepository;
-    private final String googleClientId;
+    private final PasswordResetTokenRepository resetTokenRepository;
     private final EmailService emailService;
+    private final String googleClientId;
+    private final String frontendUrl;
     private final RestTemplate restTemplate;
 
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                        AuthenticationManager authenticationManager, JwtTokenProvider tokenProvider,
                        ProfileRepository profileRepository, OrderRepository orderRepository,
                        CartItemRepository cartItemRepository,
+                       PasswordResetTokenRepository resetTokenRepository,
+                       EmailService emailService,
                        @Value("${pikacards.google.client-id}") String googleClientId,
-                       EmailService emailService) {
+                       @Value("${pikacards.frontend.url}") String frontendUrl) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
@@ -50,8 +58,10 @@ public class AuthService {
         this.profileRepository = profileRepository;
         this.orderRepository = orderRepository;
         this.cartItemRepository = cartItemRepository;
-        this.googleClientId = googleClientId;
+        this.resetTokenRepository = resetTokenRepository;
         this.emailService = emailService;
+        this.googleClientId = googleClientId;
+        this.frontendUrl = frontendUrl;
         this.restTemplate = new RestTemplate();
     }
 
@@ -158,8 +168,7 @@ public class AuthService {
     }
 
     @Transactional
-    public void deleteAccount(Long userId, String confirm, String password) {
-        if (!"DELETE".equals(confirm)) throw new IllegalArgumentException("Confirma escribiendo DELETE");
+    public void deleteAccount(Long userId, String password) {
         User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado"));
         if (!passwordEncoder.matches(password, user.getPassword())) throw new IllegalArgumentException("Contraseña inválida");
 
@@ -175,6 +184,37 @@ public class AuthService {
         String displayName = profile != null ? profile.getFirstName() : null;
         return new AuthResponse.UserDto(user.getId(), user.getUsername(), user.getEmail(),
                 displayName, profile != null ? profile.getLastName() : null, user.getAvatarUrl(), user.getRole().name());
+    }
+
+    public void forgotPassword(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Si el email existe, recibirás un enlace de recuperación"));
+
+        String token = UUID.randomUUID().toString();
+        PasswordResetToken resetToken = new PasswordResetToken();
+        resetToken.setToken(token);
+        resetToken.setUser(user);
+        resetToken.setExpiryDate(LocalDateTime.now().plusHours(1));
+        resetTokenRepository.save(resetToken);
+
+        String resetUrl = frontendUrl + "/reset-password/" + token;
+        emailService.sendResetPasswordEmail(email, user.getUsername(), resetUrl);
+    }
+
+    public void resetPassword(ResetPasswordRequest request) {
+        PasswordResetToken resetToken = resetTokenRepository.findByToken(request.getToken())
+                .orElseThrow(() -> new IllegalArgumentException("Token inválido"));
+
+        if (resetToken.isUsed() || resetToken.isExpired()) {
+            throw new IllegalArgumentException("Token expirado o ya utilizado");
+        }
+
+        User user = resetToken.getUser();
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        resetToken.setUsed(true);
+        resetTokenRepository.save(resetToken);
     }
 
     private AuthResponse buildAuthResponse(User user, String message) {

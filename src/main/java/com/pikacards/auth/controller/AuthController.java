@@ -47,7 +47,27 @@ public class AuthController {
 
     @PostMapping("/delete-account")
     public ResponseEntity<?> deleteAccount(@AuthenticationPrincipal User user, @RequestBody Map<String, String> body) {
-        try { authService.deleteAccount(user.getId(), body.getOrDefault("confirm", ""), body.getOrDefault("password", "")); return ResponseEntity.ok(Map.of("message", "Cuenta eliminada")); }
+        try { authService.deleteAccount(user.getId(), body.getOrDefault("password", "")); return ResponseEntity.ok(Map.of("message", "Cuenta eliminada")); }
         catch (IllegalArgumentException e) { return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        try {
+            authService.forgotPassword(request.getEmail());
+            return ResponseEntity.ok(Map.of("message", "Si el email existe, recibirás un enlace de recuperación"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        try {
+            authService.resetPassword(request);
+            return ResponseEntity.ok(Map.of("message", "Contraseña actualizada correctamente"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 }

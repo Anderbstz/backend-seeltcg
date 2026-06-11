@@ -43,6 +43,14 @@ public class EmailService {
         ));
     }
 
+    public void sendResetPasswordEmail(String to, String username, String resetUrl) {
+        sendEmail(to, "🔑 Recuperación de contraseña — SeaTgc", "email/reset-password", Map.of(
+            "username", username,
+            "resetUrl", resetUrl,
+            "frontendUrl", frontendUrl
+        ));
+    }
+
     public void sendPurchaseConfirmation(String to, String username, Long orderId,
                                           BigDecimal total, List<OrderItemEmail> items) {
         sendEmail(to, "✅ Compra confirmada — SeaTgc #" + orderId, "email/purchase-confirmation", Map.of(
