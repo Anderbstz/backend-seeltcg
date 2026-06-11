@@ -66,28 +66,39 @@ public class PaymentController {
                 event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
             else
                 event = com.stripe.net.ApiResource.GSON.fromJson(payload, Event.class);
-        } catch (Exception e) { return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(""); }
+        } catch (Exception e) { System.err.println("🔥 Webhook construction failed: " + e.getMessage()); return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(""); }
+
+        System.err.println("📩 Webhook recibido: type=" + event.getType());
 
         if ("checkout.session.completed".equals(event.getType())) {
-            Session session = (Session) event.getDataObjectDeserializer().getObject().orElse(null);
-            if (session != null) {
-                String userId = session.getClientReferenceId();
+            try {
+                // Extraer session desde el JSON crudo en lugar del deserializer
+                var gson = new com.google.gson.Gson();
+                var root = gson.fromJson(payload, com.google.gson.JsonObject.class);
+                var dataObj = root.getAsJsonObject("data").getAsJsonObject("object");
+                String userId = dataObj.get("client_reference_id").getAsString();
+                System.err.println("   → userId desde JSON crudo: " + userId);
+
                 if (userId != null) {
-                    try {
-                        User userRef = new User(); userRef.setId(Long.parseLong(userId));
+                    User userRef = userRepository.findById(Long.parseLong(userId)).orElse(null);
+                    System.err.println("   → Usuario encontrado: " + (userRef != null ? userRef.getId() : "null"));
+                    if (userRef != null) {
+                        System.err.println("   → Creando orden para user " + userId);
                         Order order = orderService.createOrderFromCart(userRef);
-                        User fullUser = userRepository.findById(userRef.getId()).orElse(null);
-                        if (fullUser != null && fullUser.getEmail() != null) {
+                        System.err.println("   → Orden #" + order.getId() + " creada con " + order.getItems().size() + " items");
+
+                        if (userRef.getEmail() != null) {
                             List<OrderItemEmail> items = order.getItems().stream()
-                                .map(i -> new OrderItemEmail(i.getProductName(), i.getQuantity(),
-                                    "S/ " + i.getPrice()))
+                                .map(i -> new OrderItemEmail(i.getProductName(), i.getQuantity(), "S/ " + i.getPrice()))
                                 .toList();
-                            emailService.sendPurchaseConfirmation(
-                                fullUser.getEmail(), fullUser.getUsername(),
-                                order.getId(), order.getTotal(), items);
+                            emailService.sendPurchaseConfirmation(userRef.getEmail(), userRef.getUsername(), order.getId(), order.getTotal(), items);
+                            System.err.println("   → Email de confirmación enviado");
                         }
-                    } catch (Exception e) { System.err.println("Error creating order from webhook: " + e.getMessage()); }
+                    }
                 }
+            } catch (Exception e) {
+                System.err.println("🔥 Error: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+                e.printStackTrace();
             }
         }
         return ResponseEntity.ok("");

@@ -41,7 +41,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.DELETE, "/api/admin/cards/**").hasRole("ADMIN")
                 .requestMatchers("/api/status").permitAll()
                 .requestMatchers("/api/analytics/**").permitAll()
-                .requestMatchers("/webhook/stripe/**").permitAll()
+                .requestMatchers("/api/webhook/stripe/**").permitAll()
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .anyRequest().authenticated()
